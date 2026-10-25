@@ -1,0 +1,532 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// کاربران و دسترسی‌ها
+// ============================================
+model User {
+  id         Int       @id @default(autoincrement())
+  username   String    @unique
+  password   String
+  role       Role      @default(EMPLOYEE)
+  employeeId Int?      @unique
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  isActive   Boolean   @default(true)
+  lastLogin  DateTime?
+  createdAt  DateTime  @default(now())
+
+  permissions String[] @default([])
+
+  activityLogs ActivityLog[]
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  ACCOUNTANT
+  EMPLOYEE
+}
+
+// ============================================
+// مشتریان
+// ============================================
+model Customer {
+  id           Int          @id @default(autoincrement())
+  fullName     String
+  phone        String       @unique
+  email        String?
+  address      String?
+  nationalId   String?
+  customerType CustomerType @default(BOTH)
+  
+  balanceUsd   Decimal      @default(0) @db.Decimal(18, 2)
+  balanceAfn   Decimal      @default(0) @db.Decimal(18, 2)
+  
+  balanceGoldGram   Decimal  @default(0) @db.Decimal(18, 4)
+  balanceSilverGram Decimal  @default(0) @db.Decimal(18, 4)
+
+  totalProfit  Decimal      @default(0) @db.Decimal(18, 2)
+  totalLoss    Decimal      @default(0) @db.Decimal(18, 2)
+  notes        String?
+  isActive     Boolean      @default(true)
+  reminderDate DateTime?
+  lastReminder DateTime?
+  createdAt    DateTime     @default(now())
+
+  transactions    Transaction[]
+  guarantors      Guarantor[]
+  reminders       Reminder[]
+  ledger          CustomerLedger[] 
+
+  @@index([phone])
+  @@index([fullName])
+}
+
+enum CustomerType {
+  BUYER
+  SELLER
+  BOTH
+}
+
+// ============================================
+// دفتر معین مشتری (کیف پول و تاریخچه حساب)
+// ============================================
+model CustomerLedger {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  customer    Customer @relation(fields: [customerId], references: [id])
+  
+  type        String   
+  referenceId Int?     
+  description String   
+  
+  debitUsd    Decimal  @default(0) @db.Decimal(18, 2) 
+  creditUsd   Decimal  @default(0) @db.Decimal(18, 2) 
+  
+  goldAmount   Decimal @default(0) @db.Decimal(18, 4) 
+  silverAmount Decimal @default(0) @db.Decimal(18, 4) 
+  
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([customerId])
+  @@index([date])
+}
+
+// ============================================
+// ضامن مشتری
+// ============================================
+model Guarantor {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id])
+  fullName   String
+  phone      String
+  nationalId String?
+  address    String?
+  relation   String?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
+}
+
+// ============================================
+// یادآوری پرداخت
+// ============================================
+model Reminder {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id])
+  message    String
+  method     String   @default("MANUAL")
+  remindAt   DateTime
+  isDone     Boolean  @default(false)
+  doneAt     DateTime?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
+  @@index([remindAt])
+}
+
+// ============================================
+// کارمندان
+// ============================================
+model Employee {
+  id             Int             @id @default(autoincrement())
+  fullName       String
+  phone          String
+  position       String
+  hireDate       DateTime
+  salaryAmount   Decimal         @db.Decimal(18, 2)
+  salaryCurrency Currency
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+
+  user           User?
+  transactions   Transaction[]
+  salaryPayments SalaryPayment[]
+}
+
+enum Currency {
+  USD
+  AFN
+}
+
+// ============================================
+// پرداخت معاش
+// ============================================
+model SalaryPayment {
+  id          Int      @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  amount      Decimal  @db.Decimal(18, 2)
+  currency    Currency
+  bonus       Decimal  @default(0) @db.Decimal(18, 2)
+  deduction   Decimal  @default(0) @db.Decimal(18, 2)
+  forMonth    String
+  paymentDate DateTime @default(now())
+  notes       String?
+
+  @@index([employeeId])
+}
+
+// ============================================
+// نرخ‌ها
+// ============================================
+model MetalRate {
+  id               Int      @id @default(autoincrement())
+  dateTime         DateTime @unique 
+  usdToAfn         Decimal  @db.Decimal(18, 2)
+
+  goldBuyPerTolaUsd  Decimal @db.Decimal(18, 2)
+  goldSellPerTolaUsd Decimal @db.Decimal(18, 2)
+
+  silverBuyPerKgUsd  Decimal @db.Decimal(18, 2)
+  silverSellPerKgUsd Decimal @db.Decimal(18, 2)
+
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// ترید (فیکسنگ)
+// ============================================
+model Trade {
+  id             Int         @id @default(autoincrement())
+  type           TradeType
+  metal          MetalType
+  lotSize        Decimal     @db.Decimal(18, 2)
+  
+  entryPriceUsd  Decimal     @db.Decimal(18, 4) 
+  exitPriceUsd   Decimal?    @db.Decimal(18, 4) 
+  
+  entryOuncePrice Decimal    @default(0) @db.Decimal(18, 4) 
+  exitOuncePrice  Decimal?   @db.Decimal(18, 4) 
+  
+  status         TradeStatus @default(OPEN)
+  
+  grossProfitUsd Decimal     @default(0) @db.Decimal(18, 2)
+  spreadUsd      Decimal     @default(0) @db.Decimal(18, 2)
+  commissionUsd  Decimal     @default(0) @db.Decimal(18, 2)
+  swapUsd        Decimal     @default(0) @db.Decimal(18, 2)
+  netProfitUsd   Decimal     @default(0) @db.Decimal(18, 2)
+  
+  notes          String?
+  createdAt      DateTime    @default(now())
+  closedAt       DateTime?
+  
+  linkedTransactions Transaction[]
+
+  @@index([status])
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+enum TradeUnit {
+  OUNCE
+  GRAM
+}
+
+enum TradeStatus {
+  OPEN
+  CLOSED
+}
+
+// ============================================
+// معاملات فیزیکی
+// ============================================
+model Transaction {
+  id            Int      @id @default(autoincrement())
+  invoiceNumber String   @unique
+  customerId    Int
+  customer      Customer @relation(fields: [customerId], references: [id])
+  
+  employeeId    Int?
+  employee      Employee? @relation(fields: [employeeId], references: [id])
+
+  type  TransactionType
+  metal MetalType
+  unit  Unit
+  quantity Decimal @db.Decimal(18, 4) 
+  
+  meltingLossPercent Decimal? @db.Decimal(5, 2) 
+  ayar               Decimal? @db.Decimal(5, 2) 
+  standardWeight     Decimal? @db.Decimal(18, 4) 
+  deliveryDate       DateTime?
+
+  pricePerUnitUsd Decimal @db.Decimal(18, 4)
+  pricePerUnitAfn Decimal @db.Decimal(18, 4)
+  usdRate         Decimal @db.Decimal(18, 2)
+
+  totalUsd   Decimal @db.Decimal(18, 2)
+  totalAfn   Decimal @db.Decimal(18, 2)
+  commission Decimal @default(0) @db.Decimal(18, 2)
+
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(PAID)
+  paidUsd      Decimal @default(0) @db.Decimal(18, 2)
+  paidAfn      Decimal @default(0) @db.Decimal(18, 2)
+  remainingUsd Decimal @default(0) @db.Decimal(18, 2)
+  remainingAfn Decimal @default(0) @db.Decimal(18, 2)
+
+  prepaidUsd   Decimal   @default(0) @db.Decimal(18, 2)
+  prepaidAfn   Decimal   @default(0) @db.Decimal(18, 2)
+
+  isTradeIn         Boolean   @default(false)
+  tradeInMetal      MetalType?
+  tradeInQuantity   Decimal?  @db.Decimal(18, 4)
+  tradeInUnit       Unit?
+  tradeInValueUsd   Decimal?  @db.Decimal(18, 2)
+  tradeInValueAfn   Decimal?  @db.Decimal(18, 2)
+
+  linkedTradeId     Int?
+  linkedTrade       Trade?    @relation(fields: [linkedTradeId], references: [id])
+
+  profitLoss Decimal  @default(0) @db.Decimal(18, 2)
+  status     TxStatus @default(COMPLETED)
+
+  transactionDate DateTime @default(now())
+  notes           String?
+
+  payments Payment[]
+  partners TransactionPartner[]
+
+  @@index([transactionDate])
+  @@index([customerId])
+  @@index([type])
+  @@index([metal])
+  @@index([paymentStatus])
+  @@index([linkedTradeId])
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  PRE_BUY
+  PRE_SELL
+}
+
+enum MetalType {
+  GOLD
+  SILVER
+}
+
+enum Unit {
+  TOLA
+  GRAM
+  KG
+  MASHA
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK
+  CHEQUE
+  CREDIT
+  WALLET 
+}
+
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  UNPAID
+}
+
+enum TxStatus {
+  COMPLETED
+  PENDING
+  CANCELLED
+}
+
+// ============================================
+// شرکا
+// ============================================
+model Partner {
+  id        Int      @id @default(autoincrement())
+  fullName  String
+  phone     String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  transactions TransactionPartner[]
+}
+
+model TransactionPartner {
+  id              Int         @id @default(autoincrement())
+  transactionId   Int
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  partnerId       Int
+  partner         Partner     @relation(fields: [partnerId], references: [id])
+  
+  sharePercentage Decimal     @db.Decimal(5, 2)
+  profitLossShare Decimal     @db.Decimal(18, 2)
+
+  @@index([transactionId])
+  @@index([partnerId])
+}
+
+// ============================================
+// پرداخت‌ها
+// ============================================
+model Payment {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  amount        Decimal     @db.Decimal(18, 2)
+  currency      Currency
+  method        PaymentMethod
+  paymentDate   DateTime    @default(now())
+  referenceNo   String?
+  notes         String?
+
+  @@index([transactionId])
+}
+
+// ============================================
+// صندوق روزانه
+// ============================================
+model CashBox {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @unique @db.Date
+  
+  openingUsd  Decimal  @default(0) @db.Decimal(18, 2)
+  totalInUsd  Decimal  @default(0) @db.Decimal(18, 2)
+  totalOutUsd Decimal  @default(0) @db.Decimal(18, 2)
+  closingUsd  Decimal  @default(0) @db.Decimal(18, 2)
+
+  openingGold  Decimal  @default(0) @db.Decimal(18, 4)
+  totalInGold  Decimal  @default(0) @db.Decimal(18, 4)
+  totalOutGold Decimal  @default(0) @db.Decimal(18, 4)
+  closingGold  Decimal  @default(0) @db.Decimal(18, 4)
+
+  openingSilver  Decimal  @default(0) @db.Decimal(18, 4)
+  totalInSilver  Decimal  @default(0) @db.Decimal(18, 4)
+  totalOutSilver Decimal  @default(0) @db.Decimal(18, 4)
+  closingSilver  Decimal  @default(0) @db.Decimal(18, 4)
+
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+// ============================================
+// تعدیل موجودی
+// ============================================
+model InventoryAdjustment {
+  id        Int      @id @default(autoincrement())
+  metal     MetalType
+  quantity  Decimal  @db.Decimal(18, 4)
+  unit      Unit
+  reason    String
+  notes     String?
+  userId    Int?
+  createdAt DateTime @default(now())
+
+  @@index([metal])
+}
+
+// ============================================
+// مصارف روزانه
+// ============================================
+model Expense {
+  id          Int      @id @default(autoincrement())
+  category    String   
+  amountUsd   Decimal  @db.Decimal(18, 2)
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+}
+
+// ============================================
+// عواید متفرقه
+// ============================================
+model MiscIncome {
+  id          Int      @id @default(autoincrement())
+  title       String   
+  amountUsd   Decimal  @db.Decimal(18, 2)
+  date        DateTime @default(now())
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+// ============================================
+// امانت‌داری
+// ============================================
+model Trust {
+  id           Int      @id @default(autoincrement())
+  customerName String   
+  type         String   
+  amount       Decimal  @db.Decimal(18, 4) 
+  direction    String   
+  date         DateTime @default(now())
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// ============================================
+// قرض حسنه
+// ============================================
+model Hasana {
+  id           Int      @id @default(autoincrement())
+  customerName String   
+  type         String   
+  amount       Decimal  @db.Decimal(18, 4) 
+  direction    String   
+  date         DateTime @default(now())
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// ============================================
+// بکاپ
+// ============================================
+model Backup {
+  id        Int      @id @default(autoincrement())
+  fileName  String
+  size      Int
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// لاگ فعالیت‌ها
+// ============================================
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  tableName String
+  recordId  Int
+  oldData   Json?
+  newData   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tableName])
+}
+
+// ============================================
+// نرخ‌های لحظه‌ای (جدید)
+// ============================================
+model LiveRate {
+  id        Int      @id @default(autoincrement())
+  metal     String   
+  priceUsd  Decimal  @db.Decimal(18, 4)
+  timestamp DateTime @default(now())
+
+  @@index([metal, timestamp])
+}
