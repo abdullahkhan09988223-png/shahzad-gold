@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useI18n } from '@/lib/i18n'
 import Sidebar from '@/components/Sidebar'
 import {
-  Phone, MapPin, Trash2, Link as LinkIcon, Menu, Wallet, TrendingUp, Activity, FileText, ArrowRight, BookOpen, Plus, Minus, X
+  Phone, MapPin, Trash2, Menu, Wallet, FileText, ArrowRight, BookOpen, Plus, X, Printer, Eye, Home
 } from 'lucide-react'
 
 type Transaction = {
@@ -20,7 +20,7 @@ type Transaction = {
   profitLoss: string
   paymentStatus: string
   transactionDate: string
-  employee: { fullName: string }
+  employee: { fullName: string } | null
   linkedTrade: { id: number } | null
 }
 
@@ -58,7 +58,7 @@ type Customer = {
 
 type User = { id: number; username: string; role: string; employeeName: string | null; permissions?: string[] }
 
-export default function CustomerDetailPage() {
+function CustomerDetailContent() {
   const { t, language } = useI18n()
   const params = useParams()
   const id = params.id as string
@@ -68,7 +68,6 @@ export default function CustomerDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
 
-  // استیت‌های مربوط به کیف پول
   const [showWalletForm, setShowWalletForm] = useState(false)
   const [walletForm, setWalletForm] = useState({ actionType: 'DEPOSIT', assetType: 'USD', amount: '', description: '' })
   const [saving, setSaving] = useState(false)
@@ -84,15 +83,17 @@ export default function CustomerDetailPage() {
         return window.location.href = '/'
       }
       setUser(authData.user)
-
-      const res = await fetch(`/api/customers/${id}`, { cache: 'no-store' })
-      const data = await res.json()
-      if (data.success) setCustomer(data.customer)
-      
-      setLoading(false)
+      await load()
     }
     init()
   }, [id])
+
+  const load = async () => {
+    const res = await fetch(`/api/customers/${id}`, { cache: 'no-store' })
+    const data = await res.json()
+    if (data.success) setCustomer(data.customer)
+    setLoading(false)
+  }
 
   const handleDelete = async () => {
     if (!confirm('آیا مطمئن هستید که می‌خواهید این مشتری و تمام معاملاتش حذف شوند؟')) return
@@ -110,16 +111,11 @@ export default function CustomerDetailPage() {
     })
     setWalletForm({ actionType: 'DEPOSIT', assetType: 'USD', amount: '', description: '' })
     setShowWalletForm(false)
+    await load()
     setSaving(false)
-    
-    // رفرش اطلاعات
-    const res = await fetch(`/api/customers/${id}`, { cache: 'no-store' })
-    const data = await res.json()
-    if (data.success) setCustomer(data.customer)
   }
 
   const fmt = (n: string | number, digits = 2) => Number(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
-  const unitLabel = (u: string) => u === 'TOLA' ? 'توله' : u === 'KG' ? 'کیلو' : u === 'GRAM' ? 'گرام' : 'ماشا'
 
   if (loading) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>
   if (!customer) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-red-500">مشتری یافت نشد</div>
@@ -128,29 +124,14 @@ export default function CustomerDetailPage() {
   const mainMargin = language === 'fa' ? 'lg:mr-64' : 'lg:ml-64'
 
   const calcSummary = (metalType: string) => {
-    let buyQty = 0
-    let buyTotalUsd = 0
-    let sellQty = 0
-    let sellTotalUsd = 0
-    let profit = 0
-
+    let buyQty = 0, buyTotalUsd = 0, sellQty = 0, sellTotalUsd = 0, profit = 0
     customer.transactions.forEach(tx => {
       if (tx.metal !== metalType) return
-      
-      const qty = Number(tx.quantity)
-      const amount = Number(tx.totalUsd)
-      const pl = Number(tx.profitLoss)
-
-      if (tx.type === 'BUY' || tx.type === 'PRE_BUY') {
-        buyQty += qty
-        buyTotalUsd += amount
-      } else if (tx.type === 'SELL' || tx.type === 'PRE_SELL') {
-        sellQty += qty
-        sellTotalUsd += amount
-      }
+      const qty = Number(tx.quantity), amount = Number(tx.totalUsd), pl = Number(tx.profitLoss)
+      if (tx.type === 'BUY' || tx.type === 'PRE_BUY') { buyQty += qty; buyTotalUsd += amount }
+      else if (tx.type === 'SELL' || tx.type === 'PRE_SELL') { sellQty += qty; sellTotalUsd += amount }
       profit += pl
     })
-
     return { buyQty, buyTotalUsd, sellQty, sellTotalUsd, profit }
   }
 
@@ -163,7 +144,6 @@ export default function CustomerDetailPage() {
 
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-primary)] flex transition-colors duration-500 overflow-hidden" dir={dir}>
-      
       <Sidebar user={user} activePath="/customers" showMobileMenu={showMobileMenu} setShowMobileMenu={setShowMobileMenu} />
 
       <div className={mainMargin + ' flex-1 min-w-0 overflow-y-auto h-screen pb-20'}>
@@ -171,6 +151,11 @@ export default function CustomerDetailPage() {
           <div className="px-4 md:px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setShowMobileMenu(true)} className="lg:hidden text-[var(--text-secondary)]"><Menu size={24} /></button>
+              
+              <Link href="/" className="flex items-center gap-1.5 bg-[var(--bg-input)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-base)] px-3 py-1.5 rounded-lg text-xs font-bold text-[var(--text-secondary)] transition-colors">
+                <Home size={14} /> داشبورد
+              </Link>
+              
               <Link href="/customers" className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-2 transition font-medium">
                 <ArrowRight size={16} /> بازگشت به لیست
               </Link>
@@ -185,7 +170,6 @@ export default function CustomerDetailPage() {
 
         <main className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
           
-          {/* پروفایل مشتری */}
           <div className="glass-card rounded-3xl p-6 md:p-8 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--accent)]/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -204,7 +188,6 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
-          {/* 👇 بخش جدید: کیف پول مشتری 👇 */}
           <div className="glass-card rounded-3xl p-6 border-t-4 border-t-blue-500">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-bold text-lg flex items-center gap-2">
@@ -218,9 +201,7 @@ export default function CustomerDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className={`p-4 rounded-2xl border ${balance > 0 ? 'bg-red-500/10 border-red-500/20' : balance < 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-[var(--bg-input)] border-[var(--border-base)]'}`}>
                 <div className="text-xs text-[var(--text-secondary)] mb-1 font-bold">موجودی دالر ($)</div>
-                <div className={`text-2xl font-extrabold ${balance > 0 ? 'text-red-500' : balance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">
-                  ${fmt(Math.abs(balance))}
-                </div>
+                <div className={`text-2xl font-extrabold ${balance > 0 ? 'text-red-500' : balance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">${fmt(Math.abs(balance))}</div>
                 <div className={`text-[10px] mt-1 font-bold ${balance > 0 ? 'text-red-500' : balance < 0 ? 'text-green-500' : 'text-[var(--text-muted)]'}`}>
                   {balance > 0 ? '⚠️ او از من قرض دار است' : balance < 0 ? '✅ او پیش ما پول دارد' : 'تسویه کامل (صفر)'}
                 </div>
@@ -228,9 +209,7 @@ export default function CustomerDetailPage() {
 
               <div className={`p-4 rounded-2xl border ${goldBalance > 0 ? 'bg-red-500/10 border-red-500/20' : goldBalance < 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-[var(--bg-input)] border-[var(--border-base)]'}`}>
                 <div className="text-xs text-[var(--text-secondary)] mb-1 font-bold">موجودی طلا (توله)</div>
-                <div className={`text-2xl font-extrabold ${goldBalance > 0 ? 'text-red-500' : goldBalance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">
-                  {fmt(Math.abs(goldBalance), 3)}
-                </div>
+                <div className={`text-2xl font-extrabold ${goldBalance > 0 ? 'text-red-500' : goldBalance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">{fmt(Math.abs(goldBalance), 3)}</div>
                 <div className={`text-[10px] mt-1 font-bold ${goldBalance > 0 ? 'text-red-500' : goldBalance < 0 ? 'text-green-500' : 'text-[var(--text-muted)]'}`}>
                   {goldBalance > 0 ? '⚠️ طلا به ما بدهکار است' : goldBalance < 0 ? '✅ طلا پیش ما دارد' : 'تسویه کامل (صفر)'}
                 </div>
@@ -238,9 +217,7 @@ export default function CustomerDetailPage() {
 
               <div className={`p-4 rounded-2xl border ${silverBalance > 0 ? 'bg-red-500/10 border-red-500/20' : silverBalance < 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-[var(--bg-input)] border-[var(--border-base)]'}`}>
                 <div className="text-xs text-[var(--text-secondary)] mb-1 font-bold">موجودی نقره (گرام)</div>
-                <div className={`text-2xl font-extrabold ${silverBalance > 0 ? 'text-red-500' : silverBalance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">
-                  {fmt(Math.abs(silverBalance), 3)}
-                </div>
+                <div className={`text-2xl font-extrabold ${silverBalance > 0 ? 'text-red-500' : silverBalance < 0 ? 'text-green-500' : 'text-[var(--text-primary)]'}`} dir="ltr">{fmt(Math.abs(silverBalance), 3)}</div>
                 <div className={`text-[10px] mt-1 font-bold ${silverBalance > 0 ? 'text-red-500' : silverBalance < 0 ? 'text-green-500' : 'text-[var(--text-muted)]'}`}>
                   {silverBalance > 0 ? '⚠️ نقره به ما بدهکار است' : silverBalance < 0 ? '✅ نقره پیش ما دارد' : 'تسویه کامل (صفر)'}
                 </div>
@@ -248,15 +225,10 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
-          {/* جدول اکسل‌مانند خلاصه */}
           <div className="glass-card rounded-3xl overflow-hidden">
             <div className="p-5 border-b border-[var(--border-base)] bg-[var(--bg-surface-solid)]">
-              <h2 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
-                <FileText size={18} className="text-[var(--accent)]" />
-                خلاصه معاملات (جدول محاسبات)
-              </h2>
+              <h2 className="font-bold text-[var(--text-primary)] flex items-center gap-2"><FileText size={18} className="text-[var(--accent)]" /> خلاصه معاملات</h2>
             </div>
-            
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -303,29 +275,64 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
-          {/* دفتر معین */}
+          <div className="glass-card rounded-3xl overflow-hidden">
+            <div className="p-5 border-b border-[var(--border-base)] flex items-center justify-between bg-[var(--bg-surface-solid)]">
+              <h2 className="font-bold text-[var(--text-primary)] flex items-center gap-2"><FileText size={18} className="text-[var(--accent)]" /> فاکتورهای این مشتری</h2>
+              <span className="text-xs bg-[var(--bg-input)] px-3 py-1 rounded-lg text-[var(--text-muted)]">{customer.transactions.length} فاکتور</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[var(--bg-input)] text-xs text-[var(--text-secondary)] border-b border-[var(--border-base)]">
+                  <tr>
+                    <th className="p-4 text-right font-bold">شماره فاکتور</th>
+                    <th className="p-4 text-right font-bold">تاریخ</th>
+                    <th className="p-4 text-right font-bold">نوع</th>
+                    <th className="p-4 text-right font-bold">مقدار</th>
+                    <th className="p-4 text-right font-bold">مبلغ کل ($)</th>
+                    <th className="p-4 text-center font-bold">عملیات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customer.transactions.map((tx) => (
+                    <tr key={tx.id} className="border-t border-[var(--border-base)] hover:bg-[var(--bg-input)] transition-colors">
+                      <td className="p-4 font-bold font-mono text-xs" dir="ltr">{tx.invoiceNumber}</td>
+                      <td className="p-4 text-xs text-[var(--text-secondary)]" dir="ltr">{new Date(tx.transactionDate).toLocaleDateString('fa-IR')}</td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${tx.type === 'BUY' || tx.type === 'PRE_BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                          {tx.type === 'BUY' || tx.type === 'PRE_BUY' ? 'خرید' : 'فروش'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-xs" dir="ltr">{fmt(tx.quantity, 3)} {tx.unit === 'TOLA' ? 'توله' : 'گرام'}</td>
+                      <td className="p-4 font-bold" dir="ltr">${fmt(tx.totalUsd)}</td>
+                      <td className="p-4 flex items-center justify-center gap-2">
+                        <Link href={`/transactions/${tx.id}`} title="مشاهده" className="p-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 rounded-lg transition-colors"><Eye size={16}/></Link>
+                        <Link href={`/transactions/${tx.id}/invoice`} target="_blank" title="چاپ" className="p-2 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 rounded-lg transition-colors"><Printer size={16}/></Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="glass-card rounded-3xl overflow-hidden border-t-4 border-t-blue-500">
-            <div className="p-5 border-b border-[var(--border-base)] flex items-center justify-between">
-              <h2 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
-                <BookOpen size={18} className="text-blue-500" />
-                تاریخچه حساب (کیف پول و معاملات)
-              </h2>
+            <div className="p-5 border-b border-[var(--border-base)] flex items-center justify-between bg-[var(--bg-surface-solid)]">
+              <h2 className="font-bold text-[var(--text-primary)] flex items-center gap-2"><BookOpen size={18} className="text-blue-500" /> تاریخچه حساب (کیف پول)</h2>
               <span className="text-xs bg-[var(--bg-input)] px-3 py-1 rounded-lg text-[var(--text-muted)]">{customer.ledger?.length || 0} تراکنش</span>
             </div>
-
             {!customer.ledger || customer.ledger.length === 0 ? (
               <div className="p-10 text-center text-[var(--text-muted)] text-sm">هیچ تراکنشی در دفتر معین ثبت نشده است</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-[var(--bg-surface-solid)] text-xs text-[var(--text-secondary)] border-b border-[var(--border-base)]">
+                  <thead className="bg-[var(--bg-input)] text-xs text-[var(--text-secondary)] border-b border-[var(--border-base)]">
                     <tr>
                       <th className="p-4 text-right font-bold">تاریخ</th>
                       <th className="p-4 text-right font-bold">شرح فعالیت</th>
-                      <th className="p-4 text-center font-bold text-red-500">بدهی مشتری ($)</th>
-                      <th className="p-4 text-center font-bold text-green-500">طلب مشتری ($)</th>
-                      <th className="p-4 text-center font-bold text-yellow-500">طلا (توله)</th>
-                      <th className="p-4 text-center font-bold text-slate-400">نقره (گرام)</th>
+                      <th className="p-4 text-center font-bold text-red-500">بدهی ($)</th>
+                      <th className="p-4 text-center font-bold text-green-500">طلب ($)</th>
+                      <th className="p-4 text-center font-bold text-yellow-500">طلا</th>
+                      <th className="p-4 text-center font-bold text-slate-400">نقره</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -348,7 +355,6 @@ export default function CustomerDetailPage() {
         </main>
       </div>
 
-      {/* 👇 مودال واریز/برداشت 👇 */}
       {showWalletForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-card border border-[var(--border-base)] rounded-3xl p-6 w-full max-w-md shadow-2xl">
@@ -394,5 +400,13 @@ export default function CustomerDetailPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function CustomerDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>}>
+      <CustomerDetailContent />
+    </Suspense>
   )
 }
