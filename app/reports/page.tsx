@@ -14,18 +14,26 @@ export default function ReportsPage() {
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   
   const [isMounted, setIsMounted] = useState(false)
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-  const [to, setTo] = useState(new Date().toISOString().split('T')[0])
+  
+  // 👇 مقدار اولیه رشته خالی است تا در زمان بیلد ارور ندهد 👇
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
 
   useEffect(() => {
     setIsMounted(true)
+    
+    // 👇 تاریخ را فقط در مرورگر تنظیم میکنیم 👇
+    const today = new Date()
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+    setFrom(firstDay.toISOString().split('T')[0])
+    setTo(today.toISOString().split('T')[0])
+
     const init = async () => {
       try {
         const authRes = await fetch('/api/auth/me', { cache: 'no-store' })
         const authData = await authRes.json()
         if (!authData.success) return window.location.href = '/login'
         setUser(authData.user)
-        await load() // 👈 لود خودکار در بدو ورود
       } catch (err) {
         setError('خطا در احراز هویت')
         setLoading(false)
@@ -33,6 +41,13 @@ export default function ReportsPage() {
     }
     init()
   }, [])
+
+  // وقتی تاریخ‌ها ست شدند (بعد از باز شدن صفحه)، گزارش را لود میکنیم
+  useEffect(() => {
+    if (from && to) {
+      load()
+    }
+  }, [from, to])
 
   const load = async () => {
     setLoading(true)

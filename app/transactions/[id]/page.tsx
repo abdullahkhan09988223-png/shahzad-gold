@@ -1,13 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useI18n } from '@/lib/i18n'
 import Sidebar from '@/components/Sidebar'
 import {
-  ArrowLeftRight, FileText, Menu, Link as LinkIcon, Handshake, Ban, AlertTriangle
+  ArrowLeftRight, FileText, Menu, Link as LinkIcon, Handshake, Trash2, AlertTriangle, Home
 } from 'lucide-react'
+
+const WhatsAppIcon = ({ size = 20, className = "" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21" />
+    <path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1" />
+  </svg>
+)
 
 type TransactionPartner = {
   id: number
@@ -35,11 +42,11 @@ type Transaction = {
   profitLoss: string
   paymentMethod: string
   paymentStatus: string
-  status: string // 👈 وضعیت اضافه شد
+  status: string
   transactionDate: string
   notes: string | null
   customer: { id: number; fullName: string; phone: string }
-  employee: { id: number; fullName: string }
+  employee: { id: number; fullName: string } | null
   linkedTrade: { id: number } | null
   partners: TransactionPartner[]
   payments: {
@@ -55,7 +62,7 @@ type Transaction = {
 
 type User = { id: number; username: string; role: string; employeeName: string | null; permissions?: string[] }
 
-export default function TransactionDetailPage() {
+function TransactionDetailContent() {
   const { t, language } = useI18n()
   const params = useParams()
   const id = params.id as string
@@ -65,7 +72,7 @@ export default function TransactionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [cancelling, setCancelling] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -97,25 +104,57 @@ export default function TransactionDetailPage() {
     }
   }
 
-  const handleCancel = async () => {
-    if (!confirm('آیا مطمئن هستید؟ با این کار معامله باطل شده و اثرات مالی آن برگشت می‌خورد. سابقه اما حفظ می‌شود.')) return
-    setCancelling(true)
+  const handleDelete = async () => {
+    if (!confirm('⚠️ هشدار جدی!\n\nآیا مطمئن هستید که می‌خواهید این معامله را کاملاً حذف کنید؟\nبا این کار اثرات مالی آن (بدهی مشتری، پرداخت‌ها) برگشت خورده و فاکتور برای همیشه پاک می‌شود.\n\nاین عمل غیرقابل بازگشت است!')) return
+    
+    setDeleting(true)
     try {
-      const res = await fetch(`/api/transactions/${id}/cancel`, { method: 'POST' })
+      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.success) {
-        await load() // رفرش کردن اطلاعات
+        window.location.href = '/transactions'
       } else {
         alert(data.error)
       }
     } catch (err) {
       alert(String(err))
     } finally {
-      setCancelling(false)
+      setDeleting(false)
     }
   }
 
   const fmt = (n: string | number, digits = 2) => Number(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+
+  const handleWhatsApp = () => {
+    if (!tx) return
+    let phone = tx.customer.phone.replace(/\D/g, '')
+    if (phone.startsWith('0')) phone = phone.substring(1)
+    if (!phone.startsWith('93')) phone = '93' + phone
+
+    const typeStr = tx.type === 'BUY' || tx.type === 'PRE_BUY' ? 'خرید' : 'فروش'
+    const metalStr = tx.metal === 'GOLD' ? 'طلا' : 'نقره'
+    const unitStr = tx.unit === 'TOLA' ? 'توله' : tx.unit === 'GRAM' ? 'گرام' : tx.unit === 'MASHA' ? 'ماشا' : 'کیلو'
+    
+    const text = `*🏢 SHAHZAD GOLD* 🏢\n` +
+      `_Trust in every trade_\n\n` +
+      `سلام ${tx.customer.fullName} عزیز،\n` +
+      `فاکتور ${typeStr} شما به شرح زیر صادر گردید:\n\n` +
+      `🔖 *شماره فاکتور:* ${tx.invoiceNumber}\n` +
+      `📅 *تاریخ:* ${new Date(tx.transactionDate).toLocaleDateString('fa-IR')}\n` +
+      `⚖️ *نوعیت:* ${metalStr} (${typeStr})\n` +
+      `📦 *مقدار:* ${Number(tx.quantity).toFixed(3)} ${unitStr}\n` +
+      `💵 *قیمت واحد:* $${fmt(tx.pricePerUnitUsd)}\n` +
+      `-----------------------------\n` +
+      `💰 *جمع کل:* $${fmt(tx.totalUsd)}\n` +
+      `✅ *پرداخت شده:* $${fmt(tx.paidUsd)}\n` +
+      `⚠️ *باقی‌مانده:* $${fmt(tx.remainingUsd)}\n` +
+      `-----------------------------\n` +
+      `با تشکر از معامله شما.\n` +
+      `📍 کابل، افغانستان`
+
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank')
+  }
 
   if (loading) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>
   if (error || !tx) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-red-500">معامله یافت نشد</div>
@@ -131,7 +170,6 @@ export default function TransactionDetailPage() {
 
       <div className={mainMargin + ' flex-1 min-w-0 overflow-y-auto h-screen pb-20 relative'}>
         
-        {/* 👇 مهر باطل شده (اگر معامله کنسل شده باشد) 👇 */}
         {isCancelled && (
           <div className="absolute inset-0 pointer-events-none z-50 flex items-center justify-center opacity-10 overflow-hidden">
             <div className="text-[150px] md:text-[250px] font-extrabold text-red-500 rotate-[-30deg]">باطل</div>
@@ -142,18 +180,25 @@ export default function TransactionDetailPage() {
           <div className="px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setShowMobileMenu(true)} className="lg:hidden text-[var(--text-secondary)]"><Menu size={24} /></button>
+              
+              <Link href="/" className="flex items-center gap-1.5 bg-[var(--bg-input)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-base)] px-3 py-1.5 rounded-lg text-xs font-bold text-[var(--text-secondary)] transition-colors">
+                <Home size={14} /> داشبورد
+              </Link>
+
               <Link href="/transactions" className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-2 transition font-medium">
                 <ArrowLeftRight size={16} className="rotate-180" /> بازگشت به لیست
               </Link>
             </div>
-            <div className="flex gap-3">
-              {/* 👇 دکمه باطل کردن 👇 */}
-              {!isCancelled && (
-                <button onClick={handleCancel} disabled={cancelling} className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all disabled:opacity-50">
-                  <Ban size={16} /> {cancelling ? 'در حال باطل کردن...' : 'باطل کردن معامله'}
-                </button>
-              )}
-              <Link href={`/transactions/${tx.id}/invoice`} target="_blank" className="bg-[var(--bg-surface-solid)] hover:bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm">
+            <div className="flex flex-wrap gap-2 md:gap-3">
+              <button onClick={handleWhatsApp} className="bg-green-500 hover:bg-green-600 text-white border border-green-600 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg shadow-green-500/20">
+                <WhatsAppIcon size={16} /> ارسال به واتسپ
+              </button>
+
+              <button onClick={handleDelete} disabled={deleting} className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all disabled:opacity-50">
+                <Trash2 size={16} /> {deleting ? 'در حال حذف...' : 'حذف کامل'}
+              </button>
+              
+              <Link href={`/transactions/${tx.id}/invoice`} target="_blank" className="bg-[var(--bg-surface-solid)] hover:bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm">
                 <FileText size={16} /> پرینت فاکتور
               </Link>
             </div>
@@ -187,13 +232,13 @@ export default function TransactionDetailPage() {
           <div className={`glass-card rounded-3xl p-6 mb-6 ${isCancelled ? 'opacity-50 grayscale' : ''}`}>
             <h2 className="font-bold text-lg mb-5 flex items-center gap-2"><FileText size={18} className="text-[var(--accent)]" /> اطلاعات معامله</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
-              <Info label="نوع" value={tx.type === 'BUY' ? 'خرید' : 'فروش'} />
+              <Info label="نوع" value={tx.type === 'BUY' || tx.type === 'PRE_BUY' ? 'خرید' : 'فروش'} />
               <Info label="فلز" value={tx.metal === 'GOLD' ? 'طلا' : 'نقره'} />
-              <Info label="مقدار" value={`${Number(tx.quantity).toFixed(3)} ${tx.unit === 'TOLA' ? 'توله' : tx.unit === 'GRAM' ? 'گرام' : 'کیلو'}`} />
+              <Info label="مقدار" value={`${Number(tx.quantity).toFixed(3)} ${tx.unit === 'TOLA' ? 'توله' : tx.unit === 'GRAM' ? 'گرام' : tx.unit === 'MASHA' ? 'ماشا' : 'کیلو'}`} />
               <Info label="قیمت هر واحد" value={`$${fmt(tx.pricePerUnitUsd)}`} />
               <Info label="کارمزد" value={`$${fmt(tx.commission)}`} />
               <Info label="مشتری" value={tx.customer.fullName} link={`/customers/${tx.customer.id}`} />
-              <Info label="کارمند" value={tx.employee.fullName} />
+              <Info label="کارمند" value={tx.employee?.fullName || 'سیستم'} />
               <Info label="تاریخ" value={new Date(tx.transactionDate).toLocaleDateString('fa-IR')} />
             </div>
             {tx.notes && (
@@ -302,5 +347,14 @@ const methodLabel = (m: string) => {
   if (m === 'BANK') return 'بانک'
   if (m === 'CHEQUE') return 'چک'
   if (m === 'CREDIT') return 'اعتباری'
+  if (m === 'WALLET') return 'کیف پول'
   return m
+}
+
+export default function TransactionDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>}>
+      <TransactionDetailContent />
+    </Suspense>
+  )
 }
