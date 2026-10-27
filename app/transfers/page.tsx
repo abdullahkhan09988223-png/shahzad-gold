@@ -1,110 +1,89 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useI18n } from '@/lib/i18n'
 import Sidebar from '@/components/Sidebar'
-import { Menu, ArrowLeftRight, CheckCircle2 } from 'lucide-react'
+import { Menu, RefreshCcw, ArrowRightLeft, CheckCircle2, AlertCircle } from 'lucide-react'
 
-type Customer = { 
-  id: number; 
-  fullName: string; 
-  balanceUsd: string; 
-  balanceGoldGram: string;
-  balanceSilverGram: string;
-}
+type Customer = { id: number; fullName: string; balanceUsd: number; balanceGoldGram: number; balanceSilverGram: number }
 type User = { id: number; username: string; role: string; employeeName: string | null; permissions?: string[] }
 
-export default function TransfersPage() {
-  const { t, language } = useI18n()
+function TransfersContent() {
+  const { language } = useI18n()
   const [user, setUser] = useState<User | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
-  const [showMobileMenu, setShowMobileMenu] = useState(false)
-  
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+
   const [form, setForm] = useState({
-    debtorId: '', creditorId: '', amount: '', assetType: 'USD', unit: 'TOLA', notes: ''
+    fromCustomerId: '',
+    toCustomerId: '',
+    assetType: 'USD',
+    amount: '',
+    notes: ''
   })
 
   useEffect(() => {
     const init = async () => {
-      const authRes = await fetch('/api/auth/me', { cache: 'no-store' })
-      const authData = await authRes.json()
-      if (!authData.success) return window.location.href = '/login'
-      
-      if (authData.user.role !== 'ADMIN' && !authData.user.permissions?.includes('customers')) {
-        alert('شما به این صفحه دسترسی ندارید!')
-        return window.location.href = '/'
-      }
-      setUser(authData.user)
+      try {
+        const authRes = await fetch('/api/auth/me', { cache: 'no-store' })
+        const authData = await authRes.json()
+        if (!authData.success) return window.location.href = '/login'
+        setUser(authData.user)
 
-      const res = await fetch('/api/customers', { cache: 'no-store' })
-      const data = await res.json()
-      if (data.success) setCustomers(data.customers)
-      setLoading(false)
+        const custRes = await fetch('/api/customers', { cache: 'no-store' })
+        const custData = await custRes.json()
+        if (custData.success) setCustomers(custData.customers)
+      } catch (err) {
+        setErrorMsg(String(err))
+      } finally {
+        setLoading(false)
+      }
     }
     init()
   }, [])
 
-  const submit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(''); setSuccess(''); setSaving(true)
+    setSaving(true); setErrorMsg(''); setSuccessMsg('')
     
-    // تبدیل واحد به گرام برای طلا و نقره
-    let finalAmount = Number(form.amount)
-    if (form.assetType === 'GOLD' || form.assetType === 'SILVER') {
-      if (form.unit === 'TOLA') finalAmount = finalAmount * 11.6638
-      if (form.unit === 'KG') finalAmount = finalAmount * 1000
-      // اگر گرام باشد، همان عدد می‌ماند
-    }
-
-    const payload = {
-      debtorId: form.debtorId,
-      creditorId: form.creditorId,
-      amount: finalAmount,
-      assetType: form.assetType,
-      notes: form.notes
-    }
-
     try {
       const res = await fetch('/api/transfers', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
       })
       const data = await res.json()
       
       if (data.success) {
-        setSuccess('انتقال با موفقیت انجام شد و حساب‌ها تسویه شدند.')
-        setForm({ debtorId: '', creditorId: '', amount: '', assetType: 'USD', unit: 'TOLA', notes: '' })
+        setSuccessMsg('✅ عملیات تهاتر با موفقیت ثبت شد و حساب‌ها تسویه شدند.')
+        setForm({ ...form, fromCustomerId: '', toCustomerId: '', amount: '', notes: '' })
         
-        // رفرش لیست
-        const cRes = await fetch('/api/customers', { cache: 'no-store' })
-        const cData = await cRes.json()
-        if (cData.success) setCustomers(cData.customers)
+        // آپدیت لیست مشتریان برای نمایش موجودی جدید
+        const custRes = await fetch('/api/customers', { cache: 'no-store' })
+        const custData = await custRes.json()
+        if (custData.success) setCustomers(custData.customers)
+        
+        setTimeout(() => setSuccessMsg(''), 4000)
       } else {
-        setError(data.error || 'خطا در انجام انتقال')
+        setErrorMsg(data.error)
       }
     } catch (err) {
-      setError(String(err))
+      setErrorMsg(String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  const fmt = (n: string | number) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmt = (n: string | number, digits = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 
-  // تابع برای نمایش موجودی مشتری در منوی کشویی بر اساس نوع دارایی انتخاب شده
-  const getBalanceLabel = (c: Customer) => {
-    if (form.assetType === 'USD') return `$${fmt(c.balanceUsd)}`;
-    if (form.assetType === 'GOLD') return `${fmt(c.balanceGoldGram)} گرام طلا`;
-    if (form.assetType === 'SILVER') return `${fmt(c.balanceSilverGram)} گرام نقره`;
-    return '';
-  }
+  const fromCustomer = customers.find(c => c.id === Number(form.fromCustomerId))
+  const toCustomer = customers.find(c => c.id === Number(form.toCustomerId))
 
-  if (loading) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>
+  if (loading && !user) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>
 
   const dir = language === 'fa' ? 'rtl' : 'ltr'
   const mainMargin = language === 'fa' ? 'lg:mr-64' : 'lg:ml-64'
@@ -118,95 +97,86 @@ export default function TransfersPage() {
           <div className="px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setShowMobileMenu(true)} className="lg:hidden text-[var(--text-secondary)]"><Menu size={24} /></button>
-              <div className="text-sm text-[var(--text-secondary)] hidden md:flex items-center gap-2 font-medium"><ArrowLeftRight size={18} className="text-[var(--accent)]" /><span>انتقال معامله / تهاتر</span></div>
+              <div className="text-sm text-[var(--text-secondary)] hidden md:flex items-center gap-2 font-medium">
+                <RefreshCcw size={18} className="text-[var(--accent)]" />
+                <span>انتقال / تهاتر بین مشتریان</span>
+              </div>
             </div>
           </div>
         </header>
 
-        <main className="p-6 max-w-3xl mx-auto">
-          <div className="glass-card rounded-3xl p-6 md:p-8 border-t-4 border-t-[var(--accent)] shadow-2xl">
-            <h1 className="text-xl font-bold mb-2">🔄 انتقال حساب (تهاتر)</h1>
-            <p className="text-sm text-[var(--text-secondary)] mb-8">حساب‌های دالر، طلا و نقره را می‌توانید با هم تهاتر کنید.</p>
+        <main className="p-6 max-w-4xl mx-auto space-y-6">
+          
+          {successMsg && <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl text-sm font-bold flex items-center gap-2"><CheckCircle2 size={18}/> {successMsg}</div>}
+          {errorMsg && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-xl text-sm font-bold flex items-center gap-2"><AlertCircle size={18}/> {errorMsg}</div>}
 
-            {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-xl mb-6 text-sm font-medium">{error}</div>}
-            {success && <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl mb-6 text-sm font-medium flex items-center gap-2"><CheckCircle2 size={18}/> {success}</div>}
+          <div className="glass-card rounded-3xl p-8 border-t-4 border-t-[var(--accent)] shadow-2xl">
+            <h1 className="text-xl font-bold mb-6 flex items-center gap-2"><ArrowRightLeft size={24} className="text-[var(--accent)]"/> ثبت تهاتر جدید</h1>
+            <p className="text-xs text-[var(--text-secondary)] mb-8">در این بخش می‌توانید بدهی یک مشتری را به حساب طلب مشتری دیگر منتقل کنید تا حساب هر دو تسویه شود (بدون اینکه پولی به صندوق دکان بیاید).</p>
 
-            <form onSubmit={submit} className="space-y-5">
-              
-              {/* انتخاب نوع دارایی */}
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                {[
-                  { id: 'USD', label: '💵 دالر' },
-                  { id: 'GOLD', label: '🥇 طلا' },
-                  { id: 'SILVER', label: '🥈 نقره' },
-                ].map((asset) => (
-                  <button
-                    key={asset.id} type="button"
-                    onClick={() => setForm({ ...form, assetType: asset.id as any })}
-                    className={`py-3 rounded-xl font-bold text-sm transition ${form.assetType === asset.id ? 'bg-[var(--accent)] text-white shadow-lg' : 'bg-[var(--bg-input)] text-[var(--text-secondary)] border border-[var(--border-base)]'}`}
-                  >
-                    {asset.label}
-                  </button>
-                ))}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">مشتری بدهکار (کسی که از ما قرض دارد)</label>
-                <select value={form.debtorId} onChange={e => setForm({...form, debtorId: e.target.value})} required className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
-                  <option value="">-- انتخاب کنید --</option>
-                  {customers.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.fullName} (باقی حساب: {getBalanceLabel(c)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">مشتری طلبکار (کسی که ما از او قرضدار هستیم)</label>
-                <select value={form.creditorId} onChange={e => setForm({...form, creditorId: e.target.value})} required className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
-                  <option value="">-- انتخاب کنید --</option>
-                  {customers.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.fullName} (باقی حساب: {getBalanceLabel(c)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">مبلغ / مقدار انتقال</label>
-                  <input type="number" step="0.0001" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required dir="ltr" className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="bg-[var(--bg-input)] p-4 rounded-2xl border border-[var(--border-base)]">
+                  <label className="block text-xs font-bold text-red-500 mb-2">مشتری بدهکار (پرداخت کننده)</label>
+                  <select value={form.fromCustomerId} onChange={e => setForm({...form, fromCustomerId: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
+                    <option value="">انتخاب کنید...</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
+                  </select>
+                  {fromCustomer && (
+                    <div className="mt-3 text-xs text-[var(--text-secondary)]">
+                      موجودی فعلی: <span className={`font-bold ${fromCustomer.balanceUsd > 0 ? 'text-red-500' : 'text-green-500'}`} dir="ltr">${fmt(fromCustomer.balanceUsd)}</span>
+                    </div>
+                  )}
                 </div>
-                
-                {/* انتخاب واحد فقط برای طلا و نقره */}
-                {form.assetType !== 'USD' && (
-                  <div className="w-32">
-                    <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">واحد</label>
-                    <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})} className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-[var(--accent)]">
-                      <option value="TOLA">توله</option>
-                      <option value="GRAM">گرام</option>
-                      <option value="KG">کیلو</option>
-                    </select>
-                  </div>
-                )}
+
+                <div className="bg-[var(--bg-input)] p-4 rounded-2xl border border-[var(--border-base)]">
+                  <label className="block text-xs font-bold text-green-500 mb-2">مشتری طلبکار (دریافت کننده)</label>
+                  <select value={form.toCustomerId} onChange={e => setForm({...form, toCustomerId: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
+                    <option value="">انتخاب کنید...</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
+                  </select>
+                  {toCustomer && (
+                    <div className="mt-3 text-xs text-[var(--text-secondary)]">
+                      موجودی فعلی: <span className={`font-bold ${toCustomer.balanceUsd > 0 ? 'text-red-500' : 'text-green-500'}`} dir="ltr">${fmt(toCustomer.balanceUsd)}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">یادداشت (اختیاری)</label>
-                <input type="text" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]" />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">نوعیت دارایی</label>
+                  <select value={form.assetType} onChange={e => setForm({...form, assetType: e.target.value})} className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
+                    <option value="USD">💵 دالر</option>
+                    <option value="GOLD">🥇 طلا (گرام)</option>
+                    <option value="SILVER">🥈 نقره (گرام)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">مقدار</label>
+                  <input type="number" step="0.001" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required dir="ltr" className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-[var(--accent)]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">توضیحات (اختیاری)</label>
+                  <input type="text" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="مثلاً: تسویه بابت معامله قبلی" className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]" />
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-[var(--border-base)]">
-                <button type="submit" disabled={saving} className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white py-4 rounded-xl font-bold text-lg transition-all glow-button shadow-lg disabled:opacity-50">
-                  {saving ? 'در حال انتقال...' : '🔄 ثبت انتقال و تسویه'}
-                </button>
-              </div>
+              <button type="submit" disabled={saving} className="w-full bg-[var(--accent)] text-white py-4 rounded-xl font-bold text-lg transition-all glow-button shadow-lg disabled:opacity-50">
+                {saving ? 'در حال ثبت...' : '💾 ثبت و تسویه حساب'}
+              </button>
             </form>
           </div>
         </main>
       </div>
     </div>
+  )
+}
+
+export default function TransfersPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center text-[var(--text-primary)]">در حال بارگذاری...</div>}>
+      <TransfersContent />
+    </Suspense>
   )
 }

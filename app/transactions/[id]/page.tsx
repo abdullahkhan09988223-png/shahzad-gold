@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useI18n } from '@/lib/i18n'
 import Sidebar from '@/components/Sidebar'
 import {
-  ArrowLeftRight, FileText, Menu, Link as LinkIcon, Handshake, Trash2, AlertTriangle, Home
+  ArrowLeftRight, FileText, Menu, Link as LinkIcon, Handshake, Trash2, AlertTriangle, Home, Pencil
 } from 'lucide-react'
 
 const WhatsAppIcon = ({ size = 20, className = "" }) => (
@@ -190,16 +190,21 @@ function TransactionDetailContent() {
               </Link>
             </div>
             <div className="flex flex-wrap gap-2 md:gap-3">
+              {/* 👇 دکمه ویرایش معامله 👇 */}
+              <Link href={`/transactions/${tx.id}/edit`} className="bg-blue-500 hover:bg-blue-600 text-white border border-blue-600 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20">
+                <Pencil size={16} /> ویرایش معامله
+              </Link>
+
               <button onClick={handleWhatsApp} className="bg-green-500 hover:bg-green-600 text-white border border-green-600 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg shadow-green-500/20">
-                <WhatsAppIcon size={16} /> ارسال به واتسپ
+                <WhatsAppIcon size={16} /> واتسپ
               </button>
 
               <button onClick={handleDelete} disabled={deleting} className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all disabled:opacity-50">
-                <Trash2 size={16} /> {deleting ? 'در حال حذف...' : 'حذف کامل'}
+                <Trash2 size={16} /> {deleting ? 'در حال حذف...' : 'حذف'}
               </button>
               
               <Link href={`/transactions/${tx.id}/invoice`} target="_blank" className="bg-[var(--bg-surface-solid)] hover:bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm">
-                <FileText size={16} /> پرینت فاکتور
+                <FileText size={16} /> پرینت
               </Link>
             </div>
           </div>

@@ -1,8 +1,9 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { Printer, ArrowRight } from 'lucide-react'
+import { Printer, ArrowRight, Camera } from 'lucide-react'
+import { toPng } from 'html-to-image' // 👈 ایمپورت کتابخانه عکس
 
 type Transaction = {
   id: number
@@ -31,6 +32,9 @@ function InvoiceContent() {
   const id = params.id as string
   const [tx, setTx] = useState<Transaction | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // 👇 رفرنس برای گرفتن عکس از فاکتور 👇
+  const invoiceRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -50,6 +54,26 @@ function InvoiceContent() {
   const fmt = (n: string | number) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const fmtQty = (n: string | number) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 
+  // 👇 تابع گرفتن عکس از فاکتور 👇
+  const handleDownloadImage = () => {
+    if (invoiceRef.current === null) return
+    toPng(invoiceRef.current, { 
+      cacheBust: true, 
+      backgroundColor: '#ffffff', // پس زمینه سفید برای فاکتور
+      pixelRatio: 2 // کیفیت بالا
+    })
+      .then((dataUrl) => {
+        const link = document.createElement('a')
+        link.download = `فاکتور_${tx?.invoiceNumber}.png`
+        link.href = dataUrl
+        link.click()
+      })
+      .catch((err) => {
+        console.error('خطا در گرفتن عکس:', err)
+        alert('خطا در گرفتن عکس از فاکتور')
+      })
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold">در حال آماده‌سازی فاکتور...</div>
   if (!tx) return <div className="min-h-screen flex items-center justify-center text-red-500 font-bold">فاکتور یافت نشد</div>
 
@@ -60,18 +84,28 @@ function InvoiceContent() {
   return (
     <div className="min-h-screen bg-gray-100 text-black py-10 print:py-0 print:bg-white" dir="rtl">
       
-      {/* 👇 دکمه‌های بالای صفحه (در پرینت مخفی می‌شوند) 👇 */}
+      {/* 👇 دکمه‌های بالای صفحه (در پرینت و عکس مخفی می‌شوند) 👇 */}
       <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center print:hidden px-4">
         <button onClick={() => window.close()} className="flex items-center gap-2 text-gray-600 hover:text-black transition font-bold">
           <ArrowRight size={20} /> بستن صفحه
         </button>
-        <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg transition">
-          <Printer size={20} /> چاپ فاکتور (Print)
-        </button>
+        <div className="flex gap-3">
+          {/* 👇 دکمه ذخیره عکس 👇 */}
+          <button onClick={handleDownloadImage} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg transition">
+            <Camera size={20} /> ذخیره عکس
+          </button>
+          <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg transition">
+            <Printer size={20} /> چاپ / PDF
+          </button>
+        </div>
       </div>
 
-      {/* 👇 برگه A4 فاکتور 👇 */}
-      <div className="max-w-[210mm] mx-auto bg-white p-10 shadow-xl print:shadow-none print:p-0 print:m-0">
+      {/* 👇 برگه A4 فاکتور (این بخش عکس گرفته می‌شود) 👇 */}
+      <div 
+        ref={invoiceRef} 
+        className="max-w-[210mm] mx-auto bg-white p-10 shadow-xl print:shadow-none print:p-0 print:m-0"
+        style={{ direction: 'rtl' }}
+      >
         
         {/* هدر فاکتور */}
         <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-8">
