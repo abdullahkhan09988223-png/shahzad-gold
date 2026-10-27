@@ -190,7 +190,6 @@ function TransactionDetailContent() {
               </Link>
             </div>
             <div className="flex flex-wrap gap-2 md:gap-3">
-              {/* 👇 دکمه ویرایش معامله 👇 */}
               <Link href={`/transactions/${tx.id}/edit`} className="bg-blue-500 hover:bg-blue-600 text-white border border-blue-600 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20">
                 <Pencil size={16} /> ویرایش معامله
               </Link>
