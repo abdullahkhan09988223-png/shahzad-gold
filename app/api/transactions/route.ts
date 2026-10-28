@@ -9,12 +9,12 @@ export async function GET(request: Request) {
     const type = searchParams.get('type')
     const metal = searchParams.get('metal')
     const customerId = searchParams.get('customerId')
-    const hideLinked = searchParams.get('hideLinked') === 'true' // 👈 پارامتر جدید
+    const hideLinked = searchParams.get('hideLinked') === 'true'
 
     const where: any = { status: { not: 'CANCELLED' } }
     
     if (hideLinked) {
-      where.linkedTradeId = null // فقط معاملاتی که به ترید لینک نیستند
+      where.linkedTradeId = null
     }
     
     if (from || to) {
@@ -62,7 +62,11 @@ export async function POST(request: Request) {
     const comm = Number(commission) || 0
     const totalUsd = subtotalUsd
     
-    const paid = paymentMethod === 'WALLET' ? totalUsd : (paymentStatus === 'PAID' ? totalUsd : (Number(paidUsd) || 0))
+    // 👇 سپر دفاعی: اگر روش پرداخت نیامد، خودش نقد در نظر میگیرد 👇
+    const finalPaymentMethod = paymentMethod || 'CASH'
+    const finalPaymentStatus = paymentStatus || 'PAID'
+    
+    const paid = finalPaymentMethod === 'WALLET' ? totalUsd : (finalPaymentStatus === 'PAID' ? totalUsd : (Number(paidUsd) || 0))
     const remainingUsd = totalUsd - paid
     
     const count = await prisma.transaction.count()
@@ -76,22 +80,34 @@ export async function POST(request: Request) {
       
       const transaction = await tx.transaction.create({
         data: {
-          invoiceNumber, customerId: Number(customerId),
+          invoiceNumber, 
+          customerId: Number(customerId),
           employeeId: (employeeId && employeeId !== '') ? Number(employeeId) : undefined, 
           type, metal, unit, quantity: numQty,
-          ayar: ayar ? Number(ayar) : null, standardWeight: standardWeight ? Number(standardWeight) : null,
+          ayar: ayar ? Number(ayar) : null, 
+          standardWeight: standardWeight ? Number(standardWeight) : null,
           deliveryDate: (deliveryDate && deliveryDate !== '') ? new Date(deliveryDate) : null,
-          pricePerUnitUsd: numPrice, pricePerUnitAfn: numPrice * numRate, usdRate: numRate,
-          totalUsd, totalAfn: totalUsd * numRate, commission: comm,
-          paymentMethod, paymentStatus: paymentMethod === 'WALLET' ? 'PAID' : paymentStatus,
-          paidUsd: paid, paidAfn: paid * numRate, remainingUsd, remainingAfn: remainingUsd * numRate,
-          notes: notes || null, linkedTradeId: linkedTradeId ? Number(linkedTradeId) : null,
+          pricePerUnitUsd: numPrice, 
+          pricePerUnitAfn: numPrice * numRate, 
+          usdRate: numRate,
+          totalUsd, 
+          totalAfn: totalUsd * numRate, 
+          commission: comm,
+          paymentMethod: finalPaymentMethod, // 👈 استفاده از مقدار جایگزین
+          paymentStatus: finalPaymentMethod === 'WALLET' ? 'PAID' : finalPaymentStatus,
+          paidUsd: paid, 
+          paidAfn: paid * numRate, 
+          remainingUsd, 
+          remainingAfn: remainingUsd * numRate,
+          notes: notes || null, 
+          linkedTradeId: linkedTradeId ? Number(linkedTradeId) : null,
         }
       })
 
       let updateData: any = {}
-      if (paymentMethod === 'WALLET') updateData.balanceUsd = { increment: paid } 
+      if (finalPaymentMethod === 'WALLET') updateData.balanceUsd = { increment: paid } 
       else if (remainingUsd !== 0) updateData.balanceUsd = { increment: usdBalanceChange }
+      
       if (metal === 'GOLD') updateData.balanceGoldGram = { increment: metalBalanceChange }
       else if (metal === 'SILVER') updateData.balanceSilverGram = { increment: metalBalanceChange }
 
@@ -100,10 +116,10 @@ export async function POST(request: Request) {
       await tx.customerLedger.create({
         data: {
           customerId: Number(customerId),
-          type: paymentMethod === 'WALLET' ? 'WALLET_PAYMENT' : 'TRANSACTION',
+          type: finalPaymentMethod === 'WALLET' ? 'WALLET_PAYMENT' : 'TRANSACTION',
           referenceId: transaction.id,
-          description: paymentMethod === 'WALLET' ? `پرداخت از کیف پول بابت فاکتور ${invoiceNumber}` : `فاکتور ${type === 'SELL' || type === 'PRE_SELL' ? 'فروش' : 'خرید'} شماره ${invoiceNumber}`,
-          debitUsd: (type === 'SELL' || type === 'PRE_SELL') ? (paymentMethod === 'WALLET' ? paid : remainingUsd) : 0,
+          description: finalPaymentMethod === 'WALLET' ? `پرداخت از کیف پول بابت فاکتور ${invoiceNumber}` : `فاکتور ${type === 'SELL' || type === 'PRE_SELL' ? 'فروش' : 'خرید'} شماره ${invoiceNumber}`,
+          debitUsd: (type === 'SELL' || type === 'PRE_SELL') ? (finalPaymentMethod === 'WALLET' ? paid : remainingUsd) : 0,
           creditUsd: (type === 'BUY' || type === 'PRE_BUY') ? remainingUsd : 0,
           goldAmount: metal === 'GOLD' ? metalBalanceChange : 0,
           silverAmount: metal === 'SILVER' ? metalBalanceChange : 0,
@@ -122,6 +138,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, transaction: result })
   } catch (error) {
+    console.error("🚨 POST Transaction Error:", error) 
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
   }
 }
