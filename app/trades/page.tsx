@@ -66,8 +66,9 @@ export default function TradesPage() {
     physicalCustomerId: '', physicalType: 'SELL', physicalQuantity: '', physicalPrice: '', physicalUnit: 'TOLA'
   })
 
+  // 👇 اضافه شدن نرخ کابل به فرم بستن 👇
   const [closeForm, setCloseForm] = useState({
-    actionType: 'BOTH', exitOuncePrice: '', spreadUsd: '', commissionUsd: '', swapUsd: ''
+    actionType: 'BOTH', exitOuncePrice: '', kabulRate: '', spreadUsd: '', commissionUsd: '', swapUsd: ''
   })
 
   const [modifyForm, setModifyForm] = useState({
@@ -145,7 +146,7 @@ export default function TradesPage() {
       const data = await res.json()
       if (data.success) { 
         setShowCloseForm(null); 
-        setCloseForm({ actionType: 'BOTH', exitOuncePrice: '', spreadUsd: '', commissionUsd: '', swapUsd: '' }); 
+        setCloseForm({ actionType: 'BOTH', exitOuncePrice: '', kabulRate: '', spreadUsd: '', commissionUsd: '', swapUsd: '' }); 
         load() 
       } else setError(data.error)
     } catch (err) { setError(String(err)) } finally { setSaving(false) }
@@ -172,41 +173,43 @@ export default function TradesPage() {
     const ounce = Number(calcData.ouncePrice) || 0
     const kabul = Number(calcData.kabulPrice) || 0
     if (ounce === 0) return 0
-    // تبدیل دقیق اونس به توله: (اونس / 31.1035) * 12.15
     const globalTola = (ounce / 31.1035) * 12.15
     return globalTola - kabul
   }
 
   const rateDiff = calculateDifference()
 
-  // 👇 محاسبات دقیق (بر اساس استاندارد ۳۱.۱۰۳۵ و ۱۲.۱۵) 👇
+  // 👇 اصلاح فرمول‌های محاسباتی با نرخ کابل دستی 👇
   const getCalculations = () => {
     if (!showCloseForm || !closeForm.exitOuncePrice) return null
     
     const entryOunce = Number(showCloseForm.entryOuncePrice)
     const exitOunce = Number(closeForm.exitOuncePrice)
     const lot = Number(showCloseForm.lotSize)
+    const kabulRate = Number(closeForm.kabulRate) || 0
     
-    // ۱. محاسبه سود ترید (بر اساس اونس)
     let ounces = lot * 100 
-    let tradeProfit = 0
+    let grossTradeProfit = 0
     
     if (showCloseForm.type === 'BUY') {
-      tradeProfit = (exitOunce - entryOunce) * ounces
+      grossTradeProfit = (exitOunce - entryOunce) * ounces
     } else {
-      tradeProfit = (entryOunce - exitOunce) * ounces
+      grossTradeProfit = (entryOunce - exitOunce) * ounces
     }
 
-    // ۲. محاسبه سود فیزیکی
+    const spread = Number(closeForm.spreadUsd) || 0
+    const commission = Number(closeForm.commissionUsd) || 0
+    const swap = Number(closeForm.swapUsd) || 0
+    const netTradeProfit = grossTradeProfit - spread - commission - swap
+
     const physicalProfit = showCloseForm.linkedTransactions.reduce((s, tx) => s + Number(tx.profitLoss), 0)
+    const totalProfit = netTradeProfit + physicalProfit
 
-    // ۳. سود کل
-    const totalProfit = tradeProfit + physicalProfit
-
-    // 👇 تبدیل نرخ خروج اونس به توله برای نمایش (استاندارد ۳۱.۱۰۳۵ و ۱۲.۱۵) 👇
+    // 👇 محاسبه دقیق: (اونس / 2.56) یا (اونس / 31.1035 * 12.15) منهای نرخ کابل دستی 👇
     const globalTolaPrice = (exitOunce / 31.1035) * 12.15
+    const diffWithKabul = globalTolaPrice - kabulRate
 
-    return { entryOunce, exitOunce, lot, ounces, tradeProfit, physicalProfit, totalProfit, globalTolaPrice }
+    return { entryOunce, exitOunce, lot, ounces, grossTradeProfit, netTradeProfit, physicalProfit, totalProfit, globalTolaPrice, diffWithKabul, kabulRate }
   }
 
   const calcs = getCalculations()
@@ -360,10 +363,10 @@ export default function TradesPage() {
         </div>
       )}
 
-      {/* فرم بستن ترید */}
+      {/* فرم بستن ترید (با اسکرول و نرخ کابل) */}
       {showCloseForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-8 w-full max-w-md my-8">
+          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-6 md:p-8 w-full max-w-md my-8 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-6">مدیریت و بستن (T-{showCloseForm.id})</h2>
             {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl mb-4 text-sm">{error}</div>}
             <form onSubmit={submitCloseTrade} className="space-y-5">
@@ -384,25 +387,41 @@ export default function TradesPage() {
                     <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ خروج (اونس جهانی) $</label>
                     <input type="number" step="0.01" value={closeForm.exitOuncePrice} onChange={e => setCloseForm({...closeForm, exitOuncePrice: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
                   </div>
+
+                  {/* 👇 فیلد جدید نرخ کابل دستی 👇 */}
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ کابل (دستی) $</label>
+                    <input type="number" step="0.01" value={closeForm.kabulRate} onChange={e => setCloseForm({...closeForm, kabulRate: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} placeholder="نرخ دستی کابل را وارد کنید" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
+                  </div>
                   
-                  {/* 👇 ریز محاسبات دقیق (با استاندارد ۳۱.۱۰۳۵ و ۱۲.۱۵) 👇 */}
+                  {/* ریز محاسبات دقیق */}
                   {calcs && (
                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3 text-sm">
                       <div className="flex justify-between text-[var(--text-secondary)]">
                         <span>حجم ترید:</span>
                         <span className="font-bold" dir="ltr">{calcs.lot} لات ({calcs.ounces} اونس)</span>
                       </div>
-                      <div className="flex justify-between text-[var(--text-primary)] font-bold">
-                        <span>سود خالص ترید (بر اساس اونس):</span>
-                        <span className={`${calcs.tradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.tradeProfit)}</span>
+                      
+                      <div className="flex justify-between text-[var(--text-secondary)] border-b border-blue-500/20 pb-2">
+                        <span>سود گروس (قبل از هزینه):</span>
+                        <span className={`${calcs.grossTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.grossTradeProfit)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-[var(--text-primary)] font-bold pt-1">
+                        <span>سود خالص ترید:</span>
+                        <span className={`${calcs.netTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.netTradeProfit)}</span>
                       </div>
                       
                       <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
-                        📐 فرمول ترید: (خروج {calcs.exitOunce} - ورود {calcs.entryOunce}) × {calcs.ounces} اونس
+                        📐 فرمول خالص: (گروس ${fmt(calcs.grossTradeProfit)}) - (اسپرد+کمیشن+سوآپ)
                       </div>
 
                       <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
-                        📐 نرخ خروج کابل: ({calcs.exitOunce} ÷ ۳۱.۱۰۳۵) × ۱۲.۱۵ = ${fmt(calcs.globalTolaPrice)}
+                        📐 تبدیل اونس به توله: ({calcs.exitOunce} ÷ ۳۱.۱۰۳۵) × ۱۲.۱۵ = ${fmt(calcs.globalTolaPrice)}
+                      </div>
+
+                      <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-red-400 text-center font-bold" dir="rtl">
+                        📐 اختلاف با نرخ کابل دستی (${fmt(calcs.kabulRate)}): ${fmt(calcs.diffWithKabul)}
                       </div>
 
                       <div className="flex justify-between text-[var(--text-primary)] font-bold pt-2 border-t border-blue-500/30">

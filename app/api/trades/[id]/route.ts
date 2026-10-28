@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/prisma'
 
-const OUNCE_TO_GRAMS = 31.1035;
-const TOLA_TO_GRAMS = 12.15;
-
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const body = await request.json()
-    const { actionType, exitOuncePrice, spreadUsd, commissionUsd, swapUsd } = body
+    // 👇 دریافت نرخ کابل دستی از فرانت‌اند 👇
+    const { actionType, exitOuncePrice, kabulRate, spreadUsd, commissionUsd, swapUsd } = body
 
     const trade = await prisma.trade.findUnique({ 
       where: { id: Number(id) }, 
@@ -27,7 +25,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       const exitOunce = Number(exitOuncePrice) 
       const lotSize = Number(trade.lotSize)
       
-      const totalOunces = lotSize * 100 // 👈 ۱ لات = ۱۰۰ اونس
+      const totalOunces = lotSize * 100
 
       if (trade.type === 'BUY') {
         grossProfit = (exitOunce - entryOunce) * totalOunces
@@ -41,33 +39,38 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       
       netProfit = grossProfit - spread - commission - swap
 
-      // 👇 نرخ توله کابل در لحظه بستن با فرمول دقیق 👇
-      const globalTolaPrice = (exitOunce / OUNCE_TO_GRAMS) * TOLA_TO_GRAMS
+      // نرخ توله محاسبه شده از اونس
+      const calculatedTolaPrice = (exitOunce / 31.1035) * 12.15
+      
+      // 👇 اگر کاربر نرخ کابل دستی وارد کرده باشد، از آن استفاده میکنیم 👇
+      const finalKabulPrice = kabulRate ? Number(kabulRate) : calculatedTolaPrice
 
       await prisma.trade.update({
         where: { id: Number(id) },
         data: {
           exitOuncePrice: exitOunce,
-          exitPriceUsd: trade.metal === 'GOLD' ? globalTolaPrice : exitOunce,
-          grossProfitUsd: grossProfit, spreadUsd: spread, commissionUsd: commission, swapUsd: swap, netProfitUsd: netProfit,
-          status: 'CLOSED', closedAt: new Date()
+          exitPriceUsd: trade.metal === 'GOLD' ? finalKabulPrice : exitOunce, // ثبت نرخ کابل دستی
+          grossProfitUsd: grossProfit,
+          spreadUsd: spread,
+          commissionUsd: commission,
+          swapUsd: swap,
+          netProfitUsd: netProfit,
+          status: 'CLOSED',
+          closedAt: new Date()
         }
       })
 
-      // 👇 محاسبه سود/ضرر معاملات فیزیکی هج شده (برای هر دو حالت) 👇
       if (trade.linkedTransactions.length > 0) {
         for (const tx of trade.linkedTransactions) {
           let physicalProfit = 0
           const txQty = Number(tx.quantity)
           const txPrice = Number(tx.pricePerUnitUsd)
 
-          // اگر ترید BUY بوده (هج برای فروش فیزیکی)
+          // 👇 محاسبه سود فیزیکی بر اساس نرخ کابلِ دستیِ وارد شده 👇
           if (trade.type === 'BUY') {
-            physicalProfit = (txPrice - globalTolaPrice) * txQty
-          } 
-          // اگر ترید SELL بوده (هج برای خرید فیزیکی)
-          else {
-            physicalProfit = (globalTolaPrice - txPrice) * txQty
+            physicalProfit = (txPrice - finalKabulPrice) * txQty
+          } else {
+            physicalProfit = (finalKabulPrice - txPrice) * txQty
           }
 
           await prisma.transaction.update({
