@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useI18n } from '@/lib/i18n'
 import Sidebar from '@/components/Sidebar'
@@ -58,6 +58,9 @@ export default function TradesPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const newTradeScrollRef = useRef<HTMLDivElement>(null)
+  const closeTradeScrollRef = useRef<HTMLDivElement>(null)
+
   const [calcData, setCalcData] = useState({ ouncePrice: '', kabulPrice: '' })
 
   const [form, setForm] = useState({
@@ -66,7 +69,6 @@ export default function TradesPage() {
     physicalCustomerId: '', physicalType: 'SELL', physicalQuantity: '', physicalPrice: '', physicalUnit: 'TOLA'
   })
 
-  // 👇 اضافه شدن نرخ کابل به فرم بستن 👇
   const [closeForm, setCloseForm] = useState({
     actionType: 'BOTH', exitOuncePrice: '', kabulRate: '', spreadUsd: '', commissionUsd: '', swapUsd: ''
   })
@@ -152,15 +154,26 @@ export default function TradesPage() {
     } catch (err) { setError(String(err)) } finally { setSaving(false) }
   }
 
+  // 👇 تابع اصلاح شده (اضافه کردن روش پرداخت و وضعیت) 👇
   const submitModify = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!showModifyForm) return
     setError(''); setSaving(true)
     try {
       const res = await fetch('/api/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        customerId: modifyForm.customerId, employeeId: employees[0]?.id || 1, type: modifyForm.type,
-        metal: showModifyForm.metal, unit: modifyForm.unit, quantity: modifyForm.quantity,
-        pricePerUnitUsd: modifyForm.price, usdRate: latestRate ? Number(latestRate.usdToAfn) : 75, linkedTradeId: showModifyForm.id
+        customerId: modifyForm.customerId, 
+        employeeId: employees[0]?.id || 1, 
+        type: modifyForm.type,
+        metal: showModifyForm.metal, 
+        unit: modifyForm.unit, 
+        quantity: modifyForm.quantity,
+        pricePerUnitUsd: modifyForm.price, 
+        usdRate: latestRate ? Number(latestRate.usdToAfn) : 75, 
+        linkedTradeId: showModifyForm.id,
+        // 👇 این ۳ خط برای رفع خطا اضافه شدند 👇
+        paymentMethod: 'CASH',
+        paymentStatus: 'UNPAID',
+        paidUsd: 0
       })})
       const data = await res.json()
       if (data.success) { setShowModifyForm(null); setModifyForm({ customerId: '', type: 'SELL', quantity: '', price: '', unit: 'TOLA' }); load() } else setError(data.error)
@@ -179,7 +192,6 @@ export default function TradesPage() {
 
   const rateDiff = calculateDifference()
 
-  // 👇 اصلاح فرمول‌های محاسباتی با نرخ کابل دستی 👇
   const getCalculations = () => {
     if (!showCloseForm || !closeForm.exitOuncePrice) return null
     
@@ -205,7 +217,6 @@ export default function TradesPage() {
     const physicalProfit = showCloseForm.linkedTransactions.reduce((s, tx) => s + Number(tx.profitLoss), 0)
     const totalProfit = netTradeProfit + physicalProfit
 
-    // 👇 محاسبه دقیق: (اونس / 2.56) یا (اونس / 31.1035 * 12.15) منهای نرخ کابل دستی 👇
     const globalTolaPrice = (exitOunce / 31.1035) * 12.15
     const diffWithKabul = globalTolaPrice - kabulRate
 
@@ -241,7 +252,6 @@ export default function TradesPage() {
         <main className="p-6 max-w-7xl mx-auto">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             
-            {/* لیست معاملات باز */}
             <div>
               <h2 className="text-lg font-bold mb-6 flex items-center gap-2"><ShieldAlert size={20} className="text-yellow-500" />معاملات باز ({openTrades.length})</h2>
               <div className="space-y-5">
@@ -276,7 +286,6 @@ export default function TradesPage() {
               </div>
             </div>
 
-            {/* لیست معاملات بسته */}
             <div>
               <h2 className="text-lg font-bold mb-6 flex items-center gap-2"><CheckCircle2 size={20} className="text-green-500" />تاریخچه معاملات بسته ({closedTrades.length})</h2>
               <div className="space-y-4">
@@ -315,136 +324,168 @@ export default function TradesPage() {
 
       {/* فرم باز کردن ترید جدید */}
       {showNewForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-8 w-full max-w-lg my-8">
-            <h2 className="text-xl font-bold mb-6">باز کردن معامله جدید</h2>
-            {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl mb-4 text-sm">{error}</div>}
-            <form onSubmit={submitNewTrade} className="space-y-6">
-              
-              <div className="bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
-                <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4 flex items-center gap-2"><Activity size={16} className="text-[var(--accent)]"/> بخش فیکسنگ (آنلاین)</h3>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نوع</label><select value={form.type} onChange={e => setForm({...form, type: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="BUY">خرید (Buy)</option><option value="SELL">فروش (Sell)</option></select></div>
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">فلز</label><select value={form.metal} onChange={e => setForm({...form, metal: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="GOLD">طلا</option><option value="SILVER">نقره</option></select></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">لات</label><input type="number" step="0.01" value={form.lotSize} onChange={e => setForm({...form, lotSize: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ ورود (اونس) ($)</label><input type="number" step="0.01" value={form.entryOuncePrice} onChange={e => setForm({...form, entryOuncePrice: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
-                </div>
-              </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-6 md:p-8 w-full max-w-lg relative max-h-[90vh] flex flex-col">
+            
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <h2 className="text-xl font-bold">باز کردن معامله جدید</h2>
+              <button onClick={() => setShowNewForm(false)} className="text-gray-400 hover:text-white bg-gray-800 p-2 rounded-lg"><ChevronDown size={20} className="rotate-180" /></button>
+            </div>
 
-              <div className="bg-blue-500/5 p-5 rounded-2xl border border-blue-500/20">
-                <h3 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2"><Globe size={16}/> محاسبه اختلاف نرخ جهانی و کابل</h3>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">قیمت اونس جهانی ($)</label><input type="number" value={calcData.ouncePrice} onChange={e => setCalcData({...calcData, ouncePrice: e.target.value})} placeholder="مثلاً 4000" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
-                  <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ کابل (توله) ($)</label><input type="number" value={calcData.kabulPrice} onChange={e => setCalcData({...calcData, kabulPrice: e.target.value})} placeholder="مثلاً 3990" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
-                </div>
-                <div className="bg-[var(--bg-surface-solid)] rounded-xl p-3 flex justify-between items-center border border-[var(--border-base)]">
-                  <span className="text-xs text-[var(--text-secondary)] font-bold">تفاوت در هر توله:</span>
-                  <span className={`text-lg font-extrabold ${rateDiff >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">{rateDiff >= 0 ? '+' : ''}${fmt(rateDiff)}</span>
-                </div>
-              </div>
+            {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl mb-4 text-sm shrink-0">{error}</div>}
 
-              <div className="bg-[var(--accent-bg)] p-5 rounded-2xl border border-[var(--accent)]">
-                <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={form.hasPhysical} onChange={e => setForm({...form, hasPhysical: e.target.checked})} className="w-5 h-5 accent-[var(--accent)]" /><span className="text-sm font-bold text-[var(--accent)]">افزودن معامله فیزیکی همزمان (پوشش ریسک)</span></label>
-                {form.hasPhysical && (
-                  <div className="grid grid-cols-2 gap-4 mt-5 pt-5 border-t border-[var(--accent)]">
-                    <div className="col-span-2"><label className="block text-[10px] text-[var(--text-secondary)] mb-1">مشتری</label><select value={form.physicalCustomerId} onChange={e => setForm({...form, physicalCustomerId: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="">انتخاب کنید...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}</select></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نوع فیزیکی</label><select value={form.physicalType} onChange={e => setForm({...form, physicalType: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="SELL">فروش</option><option value="BUY">خرید</option></select></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">واحد</label><select value={form.physicalUnit} onChange={e => setForm({...form, physicalUnit: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="TOLA">توله</option><option value="KG">کیلو</option></select></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">مقدار</label><input type="number" step="0.01" value={form.physicalQuantity} onChange={e => setForm({...form, physicalQuantity: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ فیزیکی ($)</label><input type="number" step="0.01" value={form.physicalPrice} onChange={e => setForm({...form, physicalPrice: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-50">
+              <button type="button" onClick={() => newTradeScrollRef.current?.scrollBy({ top: -150, behavior: 'smooth' })} className="bg-[var(--accent)] text-white p-2 rounded-full shadow-lg opacity-80 hover:opacity-100"><ChevronUp size={20} /></button>
+              <button type="button" onClick={() => newTradeScrollRef.current?.scrollBy({ top: 150, behavior: 'smooth' })} className="bg-[var(--accent)] text-white p-2 rounded-full shadow-lg opacity-80 hover:opacity-100"><ChevronDown size={20} /></button>
+            </div>
+
+            <div ref={newTradeScrollRef} className="overflow-y-auto pr-2 custom-scrollbar flex-1">
+              <form onSubmit={submitNewTrade} className="space-y-6 pb-4">
+                <div className="bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
+                  <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4 flex items-center gap-2"><Activity size={16} className="text-[var(--accent)]"/> بخش فیکسنگ (آنلاین)</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نوع</label><select value={form.type} onChange={e => setForm({...form, type: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="BUY">خرید (Buy)</option><option value="SELL">فروش (Sell)</option></select></div>
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">فلز</label><select value={form.metal} onChange={e => setForm({...form, metal: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="GOLD">طلا</option><option value="SILVER">نقره</option></select></div>
                   </div>
-                )}
-              </div>
-              <div className="flex gap-3 pt-4"><button type="submit" disabled={saving} className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white py-3.5 rounded-xl font-bold glow-button">{saving ? '...' : 'ثبت معامله'}</button><button type="button" onClick={() => setShowNewForm(false)} className="flex-1 bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] py-3.5 rounded-xl font-bold">لغو</button></div>
-            </form>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">لات</label><input type="number" step="0.01" value={form.lotSize} onChange={e => setForm({...form, lotSize: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ ورود (اونس) ($)</label><input type="number" step="0.01" value={form.entryOuncePrice} onChange={e => setForm({...form, entryOuncePrice: e.target.value})} required className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                  </div>
+                </div>
+
+                <div className="bg-blue-500/5 p-5 rounded-2xl border border-blue-500/20">
+                  <h3 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2"><Globe size={16}/> محاسبه اختلاف نرخ جهانی و کابل</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">قیمت اونس جهانی ($)</label><input type="number" value={calcData.ouncePrice} onChange={e => setCalcData({...calcData, ouncePrice: e.target.value})} placeholder="مثلاً 4000" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ کابل (توله) ($)</label><input type="number" value={calcData.kabulPrice} onChange={e => setCalcData({...calcData, kabulPrice: e.target.value})} placeholder="مثلاً 3990" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                  </div>
+                  <div className="bg-[var(--bg-surface-solid)] rounded-xl p-3 flex justify-between items-center border border-[var(--border-base)]">
+                    <span className="text-xs text-[var(--text-secondary)] font-bold">تفاوت در هر توله:</span>
+                    <span className={`text-lg font-extrabold ${rateDiff >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">{rateDiff >= 0 ? '+' : ''}${fmt(rateDiff)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-[var(--accent-bg)] p-5 rounded-2xl border border-[var(--accent)]">
+                  <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={form.hasPhysical} onChange={e => setForm({...form, hasPhysical: e.target.checked})} className="w-5 h-5 accent-[var(--accent)]" /><span className="text-sm font-bold text-[var(--accent)]">افزودن معامله فیزیکی همزمان (پوشش ریسک)</span></label>
+                  {form.hasPhysical && (
+                    <div className="grid grid-cols-2 gap-4 mt-5 pt-5 border-t border-[var(--accent)]">
+                      <div className="col-span-2"><label className="block text-[10px] text-[var(--text-secondary)] mb-1">مشتری</label><select value={form.physicalCustomerId} onChange={e => setForm({...form, physicalCustomerId: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="">انتخاب کنید...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}</select></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نوع فیزیکی</label><select value={form.physicalType} onChange={e => setForm({...form, physicalType: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="SELL">فروش</option><option value="BUY">خرید</option></select></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">واحد</label><select value={form.physicalUnit} onChange={e => setForm({...form, physicalUnit: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none"><option value="TOLA">توله</option><option value="KG">کیلو</option></select></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">مقدار</label><input type="number" step="0.01" value={form.physicalQuantity} onChange={e => setForm({...form, physicalQuantity: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">نرخ فیزیکی ($)</label><input type="number" step="0.01" value={form.physicalPrice} onChange={e => setForm({...form, physicalPrice: e.target.value})} required={form.hasPhysical} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-2.5 text-sm focus:outline-none" /></div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-3 pt-4"><button type="submit" disabled={saving} className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white py-3.5 rounded-xl font-bold glow-button">{saving ? '...' : 'ثبت معامله'}</button><button type="button" onClick={() => setShowNewForm(false)} className="flex-1 bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] py-3.5 rounded-xl font-bold">لغو</button></div>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* فرم بستن ترید (با اسکرول و نرخ کابل) */}
+      {/* فرم بستن ترید */}
       {showCloseForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-6 md:p-8 w-full max-w-md my-8 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-6">مدیریت و بستن (T-{showCloseForm.id})</h2>
-            {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl mb-4 text-sm">{error}</div>}
-            <form onSubmit={submitCloseTrade} className="space-y-5">
-              <div className="bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
-                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-4">چه چیزی را می‌خواهید ببندید؟</label>
-                <div className="space-y-3">
-                  {showCloseForm.linkedTransactions.length > 0 && (<>
-                    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)]"><input type="radio" name="actionType" value="PHYSICAL" checked={closeForm.actionType === 'PHYSICAL'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} className="w-4 h-4 accent-blue-500" />فقط فیزیکی (ترید باز بماند)</label>
-                    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)]"><input type="radio" name="actionType" value="BOTH" checked={closeForm.actionType === 'BOTH'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} className="w-4 h-4 accent-[var(--accent)]" />هر دو را با هم ببند</label>
-                  </>)}
-                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)]"><input type="radio" name="actionType" value="TRADE" checked={closeForm.actionType === 'TRADE'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} className="w-4 h-4 accent-red-500" />فقط ترید را ببند</label>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card border border-[var(--border-base)] rounded-3xl p-6 w-full max-w-md relative max-h-[90vh] flex flex-col">
+            
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <h2 className="text-xl font-bold">مدیریت و بستن (T-{showCloseForm.id})</h2>
+              <button onClick={() => setShowCloseForm(null)} className="text-gray-400 hover:text-white bg-gray-800 p-2 rounded-lg"><ChevronDown size={20} className="rotate-180" /></button>
+            </div>
+            
+            {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl mb-4 text-sm shrink-0">{error}</div>}
+
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-50">
+              <button type="button" onClick={() => closeTradeScrollRef.current?.scrollBy({ top: -150, behavior: 'smooth' })} className="bg-[var(--accent)] text-white p-2 rounded-full shadow-lg opacity-80 hover:opacity-100"><ChevronUp size={20} /></button>
+              <button type="button" onClick={() => closeTradeScrollRef.current?.scrollBy({ top: 150, behavior: 'smooth' })} className="bg-[var(--accent)] text-white p-2 rounded-full shadow-lg opacity-80 hover:opacity-100"><ChevronDown size={20} /></button>
+            </div>
+
+            <div ref={closeTradeScrollRef} className="overflow-y-auto pr-2 custom-scrollbar flex-1">
+              <form onSubmit={submitCloseTrade} className="space-y-5 pb-4">
+                <div className="bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-4">چه چیزی را می‌خواهید ببندید؟</label>
+                  <div className="space-y-3">
+                    <label className={`flex items-center gap-2 text-sm font-medium bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)] ${showCloseForm.linkedTransactions.length === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input type="radio" name="actionType" value="PHYSICAL" checked={closeForm.actionType === 'PHYSICAL'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} disabled={showCloseForm.linkedTransactions.length === 0} className="w-4 h-4 accent-blue-500" />
+                      فقط فیزیکی (ترید باز بماند)
+                    </label>
+                    
+                    <label className={`flex items-center gap-2 text-sm font-medium bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)] ${showCloseForm.linkedTransactions.length === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input type="radio" name="actionType" value="BOTH" checked={closeForm.actionType === 'BOTH'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} disabled={showCloseForm.linkedTransactions.length === 0} className="w-4 h-4 accent-[var(--accent)]" />
+                      هر دو را با هم ببند
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer bg-[var(--bg-surface-solid)] p-3 rounded-xl border border-[var(--border-base)]">
+                      <input type="radio" name="actionType" value="TRADE" checked={closeForm.actionType === 'TRADE'} onChange={e => setCloseForm({...closeForm, actionType: e.target.value})} className="w-4 h-4 accent-red-500" />
+                      فقط ترید را ببند
+                    </label>
+                  </div>
                 </div>
-              </div>
-              
-              {closeForm.actionType !== 'PHYSICAL' && (
-                <div className="space-y-4 bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ خروج (اونس جهانی) $</label>
-                    <input type="number" step="0.01" value={closeForm.exitOuncePrice} onChange={e => setCloseForm({...closeForm, exitOuncePrice: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
-                  </div>
-
-                  {/* 👇 فیلد جدید نرخ کابل دستی 👇 */}
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ کابل (دستی) $</label>
-                    <input type="number" step="0.01" value={closeForm.kabulRate} onChange={e => setCloseForm({...closeForm, kabulRate: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} placeholder="نرخ دستی کابل را وارد کنید" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
-                  </div>
-                  
-                  {/* ریز محاسبات دقیق */}
-                  {calcs && (
-                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3 text-sm">
-                      <div className="flex justify-between text-[var(--text-secondary)]">
-                        <span>حجم ترید:</span>
-                        <span className="font-bold" dir="ltr">{calcs.lot} لات ({calcs.ounces} اونس)</span>
-                      </div>
-                      
-                      <div className="flex justify-between text-[var(--text-secondary)] border-b border-blue-500/20 pb-2">
-                        <span>سود گروس (قبل از هزینه):</span>
-                        <span className={`${calcs.grossTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.grossTradeProfit)}</span>
-                      </div>
-
-                      <div className="flex justify-between text-[var(--text-primary)] font-bold pt-1">
-                        <span>سود خالص ترید:</span>
-                        <span className={`${calcs.netTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.netTradeProfit)}</span>
-                      </div>
-                      
-                      <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
-                        📐 فرمول خالص: (گروس ${fmt(calcs.grossTradeProfit)}) - (اسپرد+کمیشن+سوآپ)
-                      </div>
-
-                      <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
-                        📐 تبدیل اونس به توله: ({calcs.exitOunce} ÷ ۳۱.۱۰۳۵) × ۱۲.۱۵ = ${fmt(calcs.globalTolaPrice)}
-                      </div>
-
-                      <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-red-400 text-center font-bold" dir="rtl">
-                        📐 اختلاف با نرخ کابل دستی (${fmt(calcs.kabulRate)}): ${fmt(calcs.diffWithKabul)}
-                      </div>
-
-                      <div className="flex justify-between text-[var(--text-primary)] font-bold pt-2 border-t border-blue-500/30">
-                        <span>سود فیزیکی (هج شده):</span>
-                        <span className={`${calcs.physicalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.physicalProfit)}</span>
-                      </div>
-
-                      <div className="flex justify-between text-lg pt-2 border-t border-blue-500/30 bg-[var(--bg-base)] p-2 rounded-lg mt-2">
-                        <span className="text-[var(--accent)] font-extrabold">سود کل نهایی:</span>
-                        <span className={`font-extrabold ${calcs.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.totalProfit)}</span>
-                      </div>
+                
+                {closeForm.actionType !== 'PHYSICAL' && (
+                  <div className="space-y-4 bg-[var(--bg-input)] p-5 rounded-2xl border border-[var(--border-base)]">
+                    <div>
+                      <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ خروج (اونس جهانی) $</label>
+                      <input type="number" step="0.01" value={closeForm.exitOuncePrice} onChange={e => setCloseForm({...closeForm, exitOuncePrice: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
                     </div>
-                  )}
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">اسپرد ($)</label><input type="number" value={closeForm.spreadUsd} onChange={e => setCloseForm({...closeForm, spreadUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">کمیسیون ($)</label><input type="number" value={closeForm.commissionUsd} onChange={e => setCloseForm({...closeForm, commissionUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
-                    <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">سوآپ ($)</label><input type="number" value={closeForm.swapUsd} onChange={e => setCloseForm({...closeForm, swapUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
+                    <div>
+                      <label className="block text-xs text-[var(--text-secondary)] mb-2">نرخ کابل (دستی) $</label>
+                      <input type="number" step="0.01" value={closeForm.kabulRate} onChange={e => setCloseForm({...closeForm, kabulRate: e.target.value})} required={closeForm.actionType !== 'PHYSICAL'} placeholder="نرخ دستی کابل را وارد کنید" className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)]" />
+                    </div>
+                    
+                    {calcs && (
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3 text-sm">
+                        <div className="flex justify-between text-[var(--text-secondary)]">
+                          <span>حجم ترید:</span>
+                          <span className="font-bold" dir="ltr">{calcs.lot} لات ({calcs.ounces} اونس)</span>
+                        </div>
+                        
+                        <div className="flex justify-between text-[var(--text-secondary)] border-b border-blue-500/20 pb-2">
+                          <span>سود گروس (قبل از هزینه):</span>
+                          <span className={`${calcs.grossTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.grossTradeProfit)}</span>
+                        </div>
+
+                        <div className="flex justify-between text-[var(--text-primary)] font-bold pt-1">
+                          <span>سود خالص ترید:</span>
+                          <span className={`${calcs.netTradeProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.netTradeProfit)}</span>
+                        </div>
+                        
+                        <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
+                          📐 فرمول خالص: (گروس ${fmt(calcs.grossTradeProfit)}) - (اسپرد+کمیشن+سوآپ)
+                        </div>
+
+                        <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-[var(--text-secondary)] text-center" dir="rtl">
+                          📐 تبدیل اونس به توله: ({calcs.exitOunce} ÷ ۳۱.۱۰۳۵) × ۱۲.۱۵ = ${fmt(calcs.globalTolaPrice)}
+                        </div>
+
+                        <div className="bg-[var(--bg-base)] p-2 rounded text-[10px] text-red-400 text-center font-bold" dir="rtl">
+                          📐 اختلاف با نرخ کابل دستی (${fmt(calcs.kabulRate)}): ${fmt(calcs.diffWithKabul)}
+                        </div>
+
+                        <div className="flex justify-between text-[var(--text-primary)] font-bold pt-2 border-t border-blue-500/30">
+                          <span>سود فیزیکی (هج شده):</span>
+                          <span className={`${calcs.physicalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.physicalProfit)}</span>
+                        </div>
+
+                        <div className="flex justify-between text-lg pt-2 border-t border-blue-500/30 bg-[var(--bg-base)] p-2 rounded-lg mt-2">
+                          <span className="text-[var(--accent)] font-extrabold">سود کل نهایی:</span>
+                          <span className={`font-extrabold ${calcs.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} dir="ltr">${fmt(calcs.totalProfit)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">اسپرد ($)</label><input type="number" value={closeForm.spreadUsd} onChange={e => setCloseForm({...closeForm, spreadUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">کمیسیون ($)</label><input type="number" value={closeForm.commissionUsd} onChange={e => setCloseForm({...closeForm, commissionUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-secondary)] mb-1">سوآپ ($)</label><input type="number" value={closeForm.swapUsd} onChange={e => setCloseForm({...closeForm, swapUsd: e.target.value})} className="w-full bg-[var(--bg-surface-solid)] border border-[var(--border-base)] rounded-xl px-3 py-2 text-sm focus:outline-none" /></div>
+                    </div>
                   </div>
-                </div>
-              )}
-              <div className="flex gap-3 pt-2"><button type="submit" disabled={saving} className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white py-3.5 rounded-xl font-bold glow-button">{saving ? '...' : 'تایید و بستن'}</button><button type="button" onClick={() => setShowCloseForm(null)} className="flex-1 bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] py-3.5 rounded-xl font-bold">لغو</button></div>
-            </form>
+                )}
+                <div className="flex gap-3 pt-2"><button type="submit" disabled={saving} className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white py-3.5 rounded-xl font-bold glow-button">{saving ? '...' : 'تایید و بستن'}</button><button type="button" onClick={() => setShowCloseForm(null)} className="flex-1 bg-[var(--bg-input)] border border-[var(--border-base)] text-[var(--text-primary)] py-3.5 rounded-xl font-bold">لغو</button></div>
+              </form>
+            </div>
           </div>
         </div>
       )}
