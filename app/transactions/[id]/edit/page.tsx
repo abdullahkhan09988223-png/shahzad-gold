@@ -61,6 +61,7 @@ function EditTransactionContent() {
             paymentStatus: tx.paymentStatus,
             paidUsd: tx.paidUsd,
             notes: tx.notes || '',
+            // 👇 تبدیل تاریخ به فرمت YYYY-MM-DD برای فیلد input 👇
             transactionDate: new Date(tx.transactionDate).toISOString().split('T')[0]
           })
         }
@@ -121,10 +122,19 @@ function EditTransactionContent() {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* 👇 فیلد تاریخ معامله (قابل تغییر) 👇 */}
                 <div>
                   <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">تاریخ معامله</label>
-                  <input type="date" value={form.transactionDate} onChange={e => setForm({...form, transactionDate: e.target.value})} required dir="ltr" className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]" />
+                  <input 
+                    type="date" 
+                    value={form.transactionDate} 
+                    onChange={e => setForm({...form, transactionDate: e.target.value})} 
+                    required 
+                    dir="ltr" 
+                    className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]" 
+                  />
                 </div>
+                
                 <div>
                   <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">مشتری</label>
                   <select value={form.customerId} onChange={e => setForm({...form, customerId: e.target.value})} required className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
@@ -132,6 +142,7 @@ function EditTransactionContent() {
                     {customers.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
                   </select>
                 </div>
+                
                 <div>
                   <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">نوعیت</label>
                   <select value={form.type} onChange={e => setForm({...form, type: e.target.value})} className="w-full bg-[var(--bg-input)] border border-[var(--border-base)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]">
